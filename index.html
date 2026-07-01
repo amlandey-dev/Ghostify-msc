@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ghostify — Your Music. Your Privacy. Your Vibe.</title>
+<meta name="description" content="Ghostify is a fully offline Android music player. No accounts, no tracking, no internet required — just your music, beautifully played.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+<style>
+/* ============================================================
+   GHOSTIFY — Design tokens
+   ============================================================ */
+:root{
+  --bg-0:#07060c;
+  --bg-1:#0d0b16;
+  --bg-2:#141024;
+  --surface:rgba(255,255,255,0.04);
+  --surface-border:rgba(168,120,255,0.16);
+  --violet:#a855f7;
+  --violet-deep:#7c3aed;
+  --fuchsia:#e879f9;
+  --mint:#5eead4;
+  --text-hi:#f1eefc;
+  --text-mid:#b9b3d1;
+  --text-low:#726d8c;
+  --glow: 0 0 40px rgba(168,85,247,0.35);
+  --radius-lg: 28px;
+  --radius-md: 18px;
+  --radius-sm: 12px;
+  --ease: cubic-bezier(.16,.84,.44,1);
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+
+html{scroll-behavior:smooth;}
+
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto;}
+  *{animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important;}
+}
+
+body{
+  background:var(--bg-0);
+  color:var(--text-hi);
+  font-family:'Inter',sans-serif;
+  overflow-x:hidden;
+  line-height:1.6;
+}
+
+h1,h2,h3,h4,.display{
+  font-family:'Space Grotesk',sans-serif;
+  letter-spacing:-0.02em;
+}
+
+.mono{font-family:'JetBrains Mono',monospace;}
+
+a{color:inherit;text-decoration:none;}
+img{max-width:100%;display:block;}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+ul{list-style:none;}
+
+.wrap{max-width:1200px;margin:0 auto;padding:0 28px;}
+
+::selection{background:var(--violet-deep);color:#fff;}
+
+/* focus visibility */
+a:focus-visible, button:focus-visible, summary:focus-visible{
+  outline:2px solid var(--fuchsia);
+  outline-offset:3px;
+  border-radius:8px;
+}
+
+/* ============================================================
+   Ambient background — animated gradient wash + noise
+   ============================================================ */
+.bg-ambient{
+  position:fixed; inset:0; z-index:-2; overflow:hidden; background:var(--bg-0);
+}
+.bg-ambient::before{
+  content:"";
+  position:absolute; inset:-20%;
+  background:
+    radial-gradient(38% 32% at 18% 20%, rgba(124,58,237,0.35), transparent 60%),
+    radial-gradient(32% 28% at 85% 15%, rgba(232,121,249,0.18), transparent 60%),
+    radial-gradient(45% 40% at 60% 90%, rgba(94,234,212,0.10), transparent 60%);
+  filter:blur(60px);
+  animation:drift 22s ease-in-out infinite alternate;
+}
+@keyframes drift{
+  0%{ transform: translate(0,0) rotate(0deg); }
+  100%{ transform: translate(-3%,3%) rotate(6deg); }
+}
+.bg-grain{
+  position:fixed; inset:0; z-index:-1; opacity:0.035; pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* floating music notes */
+.notes-field{position:fixed; inset:0; z-index:-1; pointer-events:none; overflow:hidden;}
+.note{
+  position:absolute; bottom:-10%; color:rgba(168,85,247,0.5);
+  font-size:18px; animation:float-up linear infinite;
+  text-shadow:0 0 12px rgba(168,85,247,0.6);
+}
+@keyframes float-up{
+  0%{ transform:translateY(0) translateX(0) rotate(0deg); opacity:0;}
+  10%{opacity:0.7;}
+  90%{opacity:0.4;}
+  100%{ transform:translateY(-110vh) translateX(var(--drift,40px)) rotate(360deg); opacity:0;}
+}
+
+/* ============================================================
+   Nav
+   ============================================================ */
+header.nav{
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  padding:18px 0;
+  transition:background .3s var(--ease), border-color .3s var(--ease), padding .3s var(--ease), backdrop-filter .3s var(--ease);
+  border-bottom:1px solid transparent;
+}
+header.nav.scrolled{
+  background:rgba(10,8,18,0.7);
+  backdrop-filter:blur(16px) saturate(140%);
+  -webkit-backdrop-filter:blur(16px) saturate(140%);
+  border-bottom:1px solid var(--surface-border);
+  padding:12px 0;
+}
+.nav-inner{display:flex; align-items:center; justify-content:space-between;}
+.logo{display:flex; align-items:center; gap:10px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:20px;}
+.logo .mark{width:30px; height:30px;}
+.logo .name{background:linear-gradient(120deg,#fff, var(--violet) 60%, var(--fuchsia));-webkit-background-clip:text; background-clip:text; color:transparent;}
+
+.nav-links{display:flex; align-items:center; gap:36px;}
+.nav-links a{font-size:14.5px; color:var(--text-mid); transition:color .25s;}
+.nav-links a:hover{color:var(--text-hi);}
+
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:9px;
+  padding:13px 26px; border-radius:100px; font-weight:600; font-size:14.5px;
+  transition:transform .25s var(--ease), box-shadow .25s var(--ease), filter .25s;
+  white-space:nowrap;
+}
+.btn-primary{
+  background:linear-gradient(120deg, var(--violet-deep), var(--violet) 55%, var(--fuchsia));
+  color:#fff; box-shadow:0 0 0 1px rgba(255,255,255,0.06) inset, 0 8px 30px -8px rgba(168,85,247,0.7);
+}
+.btn-primary:hover{ transform:translateY(-2px); box-shadow:0 0 0 1px rgba(255,255,255,0.1) inset, 0 14px 40px -6px rgba(168,85,247,0.9); }
+.btn-ghost{
+  background:var(--surface); border:1px solid var(--surface-border); color:var(--text-hi);
+}
+.btn-ghost:hover{ background:rgba(255,255,255,0.07); border-color:rgba(168,120,255,0.4); }
+.btn-sm{padding:10px 20px; font-size:13.5px;}
+
+.nav-cta{display:flex; align-items:center; gap:14px;}
+.menu-toggle{display:none; width:40px; height:40px; align-items:center; justify-content:center; font-size:18px;}
+
+@media (max-width:900px){
+  .nav-links{
+    position:fixed; top:0; right:0; height:100vh; width:min(78vw,320px);
+    background:rgba(12,9,20,0.97); backdrop-filter:blur(20px);
+    flex-direction:column; justify-content:center; gap:30px;
+    transform:translateX(100%); transition:transform .4s var(--ease);
+    border-left:1px solid var(--surface-border);
+  }
+  .nav-links.open{transform:translateX(0);}
+  .nav-links a{font-size:19px;}
+  .menu-toggle{display:flex; z-index:101;}
+  .nav-cta .btn-primary{display:none;}
+}
+
+/* ============================================================
+   Hero
+   ============================================================ */
+.hero{
+  position:relative; padding:190px 0 140px; overflow:hidden;
+}
+.hero-grid{
+  display:grid; grid-template-columns:1.05fr 0.95fr; gap:40px; align-items:center;
+}
+.eyebrow{
+  display:inline-flex; align-items:center; gap:9px;
+  font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase;
+  color:var(--fuchsia); background:rgba(168,85,247,0.08); border:1px solid rgba(168,85,247,0.3);
+  padding:8px 16px; border-radius:100px; margin-bottom:26px;
+}
+.eyebrow .dot{width:6px; height:6px; border-radius:50%; background:var(--fuchsia); box-shadow:0 0 10px var(--fuchsia); animation:pulse-dot 1.6s ease-in-out infinite;}
+@keyframes pulse-dot{ 50%{opacity:0.3; transform:scale(0.7);} }
+
+.hero h1{
+  font-size:clamp(38px,5.6vw,68px); line-height:1.04; font-weight:700; margin-bottom:26px;
+}
+.hero h1 .g1{background:linear-gradient(120deg,#fff 20%, var(--violet) 80%);-webkit-background-clip:text;background-clip:text;color:transparent;}
+.hero h1 .g2{background:linear-gradient(120deg,var(--violet), var(--fuchsia));-webkit-background-clip:text;background-clip:text;color:transparent;}
+.hero h1 .g3{background:linear-gradient(120deg,var(--fuchsia), var(--mint));-webkit-background-clip:text;background-clip:text;color:transparent;}
+
+.hero p.lead{ font-size:18px; color:var(--text-mid); max-width:520px; margin-bottom:38px;}
+.hero-actions{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:44px;}
+
+.hero-stats{display:flex; gap:34px; flex-wrap:wrap;}
+.hero-stats .stat b{display:block; font-family:'Space Grotesk',sans-serif; font-size:24px; color:var(--text-hi);}
+.hero-stats .stat span{font-size:12.5px; color:var(--text-low); text-transform:uppercase; letter-spacing:0.06em;}
+
+/* ---- Ghost waveform signature mark ---- */
+.ghost-sig{ width:100%; max-width:220px; opacity:0.9; }
+.ghost-sig .bar{ transform-origin:bottom; animation:eq 1.4s ease-in-out infinite; }
+
+@keyframes eq{
+  0%,100%{ transform:scaleY(0.35); }
+  50%{ transform:scaleY(1); }
+}
+
+/* ---- Phone mockup ---- */
+.phone-stage{ position:relative; display:flex; justify-content:center; align-items:center; min-height:560px; }
+.phone-glow{
+  position:absolute; width:340px; height:340px; border-radius:50%;
+  background:radial-gradient(circle, rgba(168,85,247,0.45), transparent 70%);
+  filter:blur(10px); z-index:0; animation:pulse-glow 4s ease-in-out infinite;
+}
+@keyframes pulse-glow{ 50%{ transform:scale(1.12); opacity:0.75; } }
+
+.phone{
+  position:relative; z-index:1; width:280px; aspect-ratio:9/19.5;
+  background:linear-gradient(160deg,#1a1626,#0c0a15);
+  border-radius:42px; border:2px solid rgba(255,255,255,0.08);
+  box-shadow:
+    0 0 0 8px rgba(10,8,16,0.9),
+    0 40px 90px -20px rgba(124,58,237,0.55),
+    inset 0 0 30px rgba(168,85,247,0.06);
+  padding:14px; animation:float-phone 5s ease-in-out infinite;
+}
+@keyframes float-phone{ 50%{ transform:translateY(-16px) rotate(-1deg); } }
+
+.phone-notch{ width:70px; height:18px; background:#000; border-radius:100px; margin:0 auto 14px; }
+.phone-screen{
+  height:calc(100% - 40px); border-radius:26px; overflow:hidden; position:relative;
+  background:linear-gradient(175deg,#181227,#0a0813 65%);
+  border:1px solid rgba(255,255,255,0.05);
+  display:flex; flex-direction:column;
+}
+.ps-header{ padding:16px 16px 0; display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--text-low); font-family:'JetBrains Mono',monospace;}
+.ps-art{
+  margin:18px 20px 0; aspect-ratio:1/1; border-radius:18px;
+  background:
+    linear-gradient(135deg, rgba(168,85,247,0.55), rgba(232,121,249,0.35) 50%, rgba(94,234,212,0.3)),
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 8px);
+  box-shadow:0 20px 40px -14px rgba(124,58,237,0.6);
+  display:flex; align-items:center; justify-content:center;
+  position:relative;
+}
+.ps-art .ph-icon{ font-size:34px; color:rgba(255,255,255,0.55); }
+.ps-art .ph-tag{
+  position:absolute; bottom:8px; right:10px; font-family:'JetBrains Mono',monospace; font-size:8px;
+  color:rgba(255,255,255,0.4); letter-spacing:.05em;
+}
+.ps-meta{ padding:16px 22px 0; text-align:center; }
+.ps-meta .t{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:14px; }
+.ps-meta .a{ font-size:11px; color:var(--text-low); margin-top:2px; }
+.ps-progress{ margin:16px 22px 0; height:3px; border-radius:10px; background:rgba(255,255,255,0.08); overflow:hidden; }
+.ps-progress i{ display:block; width:38%; height:100%; background:linear-gradient(90deg,var(--violet),var(--fuchsia)); }
+.ps-time{ display:flex; justify-content:space-between; padding:5px 22px 0; font-size:9px; font-family:'JetBrains Mono',monospace; color:var(--text-low); }
+.ps-controls{ margin-top:auto; display:flex; align-items:center; justify-content:center; gap:22px; padding:18px 0 22px; }
+.ps-controls .mid{
+  width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(120deg,var(--violet-deep),var(--fuchsia)); box-shadow:0 6px 22px -4px rgba(168,85,247,0.9);
+  color:#fff; font-size:15px;
+}
+.ps-controls i{ color:var(--text-mid); font-size:14px; }
+.ps-tabbar{ display:flex; justify-content:space-around; padding:10px 0; border-top:1px solid rgba(255,255,255,0.06); font-size:13px; color:var(--text-low); }
+.ps-tabbar .active{ color:var(--fuchsia); }
+
+@media (max-width:900px){
+  .hero{ padding:150px 0 90px; }
+  .hero-grid{ grid-template-columns:1fr; }
+  .phone-stage{ order:-1; min-height:420px; transform:scale(0.85); }
+}
+
+/* ============================================================
+   Section shell
+   ============================================================ */
+section{ position:relative; padding:120px 0; }
+.section-head{ max-width:640px; margin:0 auto 64px; text-align:center; }
+.section-head h2{ font-size:clamp(28px,4vw,42px); margin-bottom:16px; }
+.section-head p{ color:var(--text-mid); font-size:16.5px; }
+.section-head .eyebrow{ margin-bottom:18px; }
+
+@media (max-width:700px){ section{ padding:80px 0; } }
+
+/* reveal on scroll */
+.reveal{ opacity:0; transform:translateY(28px); transition:opacity .7s var(--ease), transform .7s var(--ease); }
+.reveal.visible{ opacity:1; transform:translateY(0); }
+
+/* ============================================================
+   Features
+   ============================================================ */
+.feature-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:22px; }
+@media (max-width:900px){ .feature-grid{ grid-template-columns:repeat(2,1fr); } }
+@media (max-width:600px){ .feature-grid{ grid-template-columns:1fr; } }
+
+.card{
+  background:var(--surface); border:1px solid var(--surface-border); border-radius:var(--radius-md);
+  padding:30px 26px; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  transition:transform .35s var(--ease), border-color .35s var(--ease), box-shadow .35s var(--ease);
+  position:relative; overflow:hidden;
+}
+.card::before{
+  content:""; position:absolute; inset:0; opacity:0; transition:opacity .35s;
+  background:radial-gradient(220px 140px at var(--mx,50%) var(--my,0%), rgba(168,85,247,0.18), transparent 70%);
+}
+.card:hover::before{ opacity:1; }
+.card:hover{ transform:translateY(-6px); border-color:rgba(168,120,255,0.45); box-shadow:0 20px 50px -20px rgba(124,58,237,0.5); }
+
+.f-icon{
+  width:50px; height:50px; border-radius:14px; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg, rgba(168,85,247,0.25), rgba(232,121,249,0.15));
+  border:1px solid rgba(168,120,255,0.3); font-size:19px; color:var(--fuchsia); margin-bottom:18px;
+}
+.card h3{ font-size:18px; margin-bottom:10px; font-weight:600; }
+.card p{ font-size:14.5px; color:var(--text-mid); }
+
+/* ============================================================
+   Radio player
+   ============================================================ */
+.radio-shell{
+  background:linear-gradient(160deg, rgba(124,58,237,0.14), rgba(255,255,255,0.02));
+  border:1px solid var(--surface-border); border-radius:var(--radius-lg);
+  padding:48px; display:grid; grid-template-columns:1fr auto; gap:40px; align-items:center;
+  position:relative; overflow:hidden;
+}
+.radio-shell::after{
+  content:""; position:absolute; right:-100px; top:-100px; width:300px; height:300px; border-radius:50%;
+  background:radial-gradient(circle, rgba(232,121,249,0.25), transparent 70%); filter:blur(10px);
+}
+@media (max-width:800px){ .radio-shell{ grid-template-columns:1fr; padding:32px 24px; text-align:center; } }
+
+.radio-left .tag{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--mint); letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px; }
+.radio-left h3{ font-size:26px; margin-bottom:12px; }
+.radio-left p{ color:var(--text-mid); margin-bottom:24px; max-width:420px; }
+@media (max-width:800px){ .radio-left p{ margin-inline:auto; } }
+
+.station-list{ display:flex; flex-direction:column; gap:8px; }
+.station{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:11px 16px; border-radius:12px; border:1px solid transparent; background:rgba(255,255,255,0.03);
+  transition:.25s; font-size:14px;
+}
+.station:hover{ background:rgba(255,255,255,0.06); }
+.station.active{ border-color:rgba(168,120,255,0.5); background:rgba(168,85,247,0.12); }
+.station .s-name{ font-weight:600; }
+.station .s-genre{ color:var(--text-low); font-size:12px; }
+
+.player-orb-wrap{ display:flex; flex-direction:column; align-items:center; gap:18px; z-index:1; }
+.player-orb{
+  width:170px; height:170px; border-radius:50%; position:relative;
+  display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(circle at 35% 30%, rgba(168,85,247,0.5), rgba(10,8,16,0.9) 70%);
+  border:1px solid rgba(168,120,255,0.4);
+  box-shadow:0 0 60px rgba(168,85,247,0.35);
+}
+.player-orb .ring{
+  position:absolute; inset:-14px; border-radius:50%; border:1px solid rgba(168,120,255,0.25);
+  animation:spin 12s linear infinite;
+}
+.player-orb .ring::before{ content:""; position:absolute; top:-3px; left:50%; width:6px; height:6px; border-radius:50%; background:var(--fuchsia); box-shadow:0 0 10px var(--fuchsia); }
+@keyframes spin{ 100%{ transform:rotate(360deg); } }
+#playBtn{
+  width:64px; height:64px; border-radius:50%; background:linear-gradient(135deg,var(--violet-deep),var(--fuchsia));
+  color:#fff; font-size:22px; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 10px 30px -6px rgba(168,85,247,0.9); transition:transform .2s;
+}
+#playBtn:hover{ transform:scale(1.06); }
+#playBtn:active{ transform:scale(0.96); }
+
+.eq-mini{ display:flex; align-items:flex-end; gap:3px; height:20px; }
+.eq-mini i{ width:3px; background:var(--fuchsia); border-radius:2px; animation:eq 1s ease-in-out infinite; opacity:0.5; }
+.eq-mini.playing i{ opacity:1; }
+.eq-mini i:nth-child(2){ animation-delay:.15s; }
+.eq-mini i:nth-child(3){ animation-delay:.3s; }
+.eq-mini i:nth-child(4){ animation-delay:.45s; }
+
+.now-playing{ text-align:center; font-size:13px; color:var(--text-mid); }
+.now-playing b{ color:var(--text-hi); font-family:'JetBrains Mono',monospace; font-weight:500; }
+.vol-row{ display:flex; align-items:center; gap:10px; width:170px; }
+.vol-row i{ color:var(--text-low); font-size:13px; }
+.vol-row input[type=range]{
+  -webkit-appearance:none; flex:1; height:4px; border-radius:4px; background:rgba(255,255,255,0.1); outline:none;
+}
+.vol-row input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; width:13px; height:13px; border-radius:50%; background:var(--fuchsia); box-shadow:0 0 8px var(--fuchsia); cursor:pointer;
+}
+
+/* ============================================================
+   Screens strip (extra visual proof, placeholder tiles)
+   ============================================================ */
+.strip{ display:flex; gap:18px; overflow:hidden; margin-top:60px; -webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent); mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent); }
+.strip-track{ display:flex; gap:18px; animation:scroll-x 26s linear infinite; }
+.strip-tile{
+  width:150px; height:270px; flex:none; border-radius:20px; border:1px solid var(--surface-border);
+  background:linear-gradient(160deg, rgba(168,85,247,0.22), rgba(10,8,16,0.9));
+  display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.35); font-size:26px;
+}
+@keyframes scroll-x{ 0%{ transform:translateX(0); } 100%{ transform:translateX(-50%); } }
+
+/* ============================================================
+   Download CTA
+   ============================================================ */
+.download-cta{
+  background:linear-gradient(160deg, rgba(124,58,237,0.22), rgba(232,121,249,0.06));
+  border:1px solid var(--surface-border); border-radius:var(--radius-lg);
+  padding:70px 40px; text-align:center; position:relative; overflow:hidden;
+}
+.download-cta::before{
+  content:""; position:absolute; inset:0;
+  background:radial-gradient(50% 60% at 50% 0%, rgba(168,85,247,0.3), transparent 70%);
+}
+.download-cta h2{ font-size:clamp(26px,4vw,40px); margin-bottom:16px; position:relative; }
+.download-cta p{ color:var(--text-mid); max-width:480px; margin:0 auto 34px; position:relative; }
+.download-cta .btn{ position:relative; padding:17px 36px; font-size:16px; }
+.dl-meta{ margin-top:22px; font-size:12.5px; color:var(--text-low); font-family:'JetBrains Mono',monospace; position:relative; }
+
+/* ============================================================
+   FAQ
+   ============================================================ */
+.faq-list{ max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+.faq-item{ border:1px solid var(--surface-border); border-radius:16px; background:var(--surface); overflow:hidden; }
+.faq-q{
+  width:100%; display:flex; align-items:center; justify-content:space-between; gap:20px;
+  padding:20px 24px; font-size:15.5px; font-weight:600; text-align:left;
+}
+.faq-q i{ color:var(--fuchsia); transition:transform .3s var(--ease); flex:none; }
+.faq-item.open .faq-q i{ transform:rotate(45deg); }
+.faq-a{ max-height:0; overflow:hidden; transition:max-height .35s var(--ease); }
+.faq-a p{ padding:0 24px 22px; color:var(--text-mid); font-size:14.5px; }
+
+/* ============================================================
+   Footer
+   ============================================================ */
+footer{ padding:70px 0 32px; border-top:1px solid var(--surface-border); }
+.foot-grid{ display:flex; justify-content:space-between; gap:40px; flex-wrap:wrap; margin-bottom:50px; }
+.foot-brand p{ color:var(--text-low); font-size:14px; max-width:280px; margin-top:14px; }
+.foot-cols{ display:flex; gap:70px; flex-wrap:wrap; }
+.foot-col h4{ font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-low); margin-bottom:16px; }
+.foot-col a{ display:block; font-size:14px; color:var(--text-mid); margin-bottom:11px; transition:color .2s; }
+.foot-col a:hover{ color:var(--fuchsia); }
+.foot-bottom{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; padding-top:26px; border-top:1px solid rgba(255,255,255,0.06); font-size:13px; color:var(--text-low); }
+.foot-bottom .credit{ color:var(--text-mid); }
+.foot-bottom .credit b{ color:var(--fuchsia); font-weight:600; }
+.foot-socials{ display:flex; gap:14px; }
+.foot-socials a{ width:36px; height:36px; border-radius:50%; border:1px solid var(--surface-border); display:flex; align-items:center; justify-content:center; transition:.25s; }
+.foot-socials a:hover{ border-color:var(--fuchsia); color:var(--fuchsia); transform:translateY(-2px); }
+</style>
+</head>
+<body>
+
+<div class="bg-ambient"></div>
+<div class="bg-grain"></div>
+<div class="notes-field" id="notesField"></div>
+
+<!-- ============================== NAV ============================== -->
+<header class="nav" id="siteNav">
+  <div class="wrap nav-inner">
+    <a href="#top" class="logo">
+      <svg class="mark" viewBox="0 0 40 40" fill="none">
+        <path d="M20 3C11.2 3 4 10.2 4 19v13.5c0 1.4 1.7 2.1 2.7 1.1l2.6-2.6 2.9 2.9c.6.6 1.5.6 2.1 0l2.7-2.7 2.7 2.7c.6.6 1.5.6 2.1 0l2.9-2.9 2.6 2.6c1 1 2.7.3 2.7-1.1V19C36 10.2 28.8 3 20 3Z" fill="url(#gpaint)"/>
+        <circle cx="14.5" cy="18" r="2.4" fill="#0a0813"/>
+        <circle cx="25.5" cy="18" r="2.4" fill="#0a0813"/>
+        <defs>
+          <linearGradient id="gpaint" x1="4" y1="3" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#a855f7"/>
+            <stop offset="1" stop-color="#e879f9"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="name">Ghostify</span>
+    </a>
+
+    <nav class="nav-links" id="navLinks">
+      <a href="#features">Features</a>
+      <a href="#radio">Live Radio</a>
+      <a href="#download">Download</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+
+    <div class="nav-cta">
+      <a href="#download" class="btn btn-primary btn-sm"><i class="fa-solid fa-download"></i> Get the APK</a>
+      <button class="menu-toggle" id="menuToggle" aria-label="Toggle menu" aria-expanded="false"><i class="fa-solid fa-bars"></i></button>
+    </div>
+  </div>
+</header>
+
+<!-- ============================== HERO ============================== -->
+<section class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <div class="eyebrow"><span class="dot"></span> 100% Offline · Zero Trackers</div>
+      <h1>
+        <span class="g1">Your Music.</span><br>
+        <span class="g2">Your Privacy.</span><br>
+        <span class="g3">Your Vibe.</span>
+      </h1>
+      <p class="lead">Ghostify is an offline-first Android music player built for people who just want to play their own files — no accounts, no ads, no data leaving your phone. Ever.</p>
+
+      <div class="hero-actions">
+        <a href="#download" class="btn btn-primary"><i class="fa-brands fa-android"></i> Download APK</a>
+        <a href="#radio" class="btn btn-ghost"><i class="fa-solid fa-satellite-dish"></i> Try Live Radio</a>
+      </div>
+
+      <div class="hero-stats">
+        <div class="stat"><b>0 KB</b><span>Data Collected</span></div>
+        <div class="stat"><b>&lt; 5 MB</b><span>App Size</span></div>
+        <div class="stat"><b>100%</b><span>Works Offline</span></div>
+      </div>
+    </div>
+
+    <div class="phone-stage">
+      <div class="phone-glow"></div>
+
+      <!-- signature ghost-waveform mark -->
+      <svg class="ghost-sig" style="position:absolute; top:-40px; left:-10px; z-index:0;" viewBox="0 0 200 200" fill="none">
+        <g opacity="0.5">
+          <rect class="bar" x="70" y="90" width="6" height="30" rx="3" fill="#a855f7" style="animation-delay:0s"/>
+          <rect class="bar" x="82" y="70" width="6" height="50" rx="3" fill="#c084fc" style="animation-delay:.15s"/>
+          <rect class="bar" x="94" y="55" width="6" height="65" rx="3" fill="#e879f9" style="animation-delay:.3s"/>
+          <rect class="bar" x="106" y="65" width="6" height="55" rx="3" fill="#c084fc" style="animation-delay:.45s"/>
+          <rect class="bar" x="118" y="85" width="6" height="35" rx="3" fill="#a855f7" style="animation-delay:.6s"/>
+        </g>
+      </svg>
+
+      <!-- ==== Phone mockup — PLACEHOLDER UI ====
+           Swap .ps-art background / add <img> for real screenshots -->
+      <div class="phone">
+        <div class="phone-notch"></div>
+        <div class="phone-screen">
+          <div class="ps-header">
+            <span>9:41</span>
+            <span><i class="fa-solid fa-wifi-slash"></i> OFFLINE</span>
+          </div>
+          <div class="ps-art">
+            <i class="fa-solid fa-compact-disc ph-icon"></i>
+            <span class="ph-tag">COVER ART PLACEHOLDER</span>
+          </div>
+          <div class="ps-meta">
+            <div class="t">Midnight Frequencies</div>
+            <div class="a">Ghostify Demo Track</div>
+          </div>
+          <div class="ps-progress"><i></i></div>
+          <div class="ps-time"><span>1:24</span><span>3:42</span></div>
+          <div class="ps-controls">
+            <i class="fa-solid fa-shuffle"></i>
+            <i class="fa-solid fa-backward-step"></i>
+            <div class="mid"><i class="fa-solid fa-pause"></i></div>
+            <i class="fa-solid fa-forward-step"></i>
+            <i class="fa-solid fa-repeat"></i>
+          </div>
+          <div class="ps-tabbar">
+            <i class="fa-solid fa-house active"></i>
+            <i class="fa-solid fa-list"></i>
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <i class="fa-solid fa-gear"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FEATURES ============================== -->
+<section id="features">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow"><span class="dot"></span> Built Different</div>
+      <h2>Everything you need. Nothing you don't.</h2>
+      <p>Ghostify strips music playback down to what actually matters — and does it beautifully.</p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="card reveal">
+        <div class="f-icon"><i class="fa-solid fa-wifi-slash"></i></div>
+        <h3>Offline Music</h3>
+        <p>Every track plays straight from your device. No streaming, no buffering, no signal required — even in airplane mode.</p>
+      </div>
+      <div class="card reveal">
+        <div class="f-icon"><i class="fa-solid fa-mobile-screen"></i></div>
+        <h3>Background Playback</h3>
+        <p>Lock your screen, switch apps, or take a call — your music keeps playing without missing a beat.</p>
+      </div>
+      <div class="card reveal">
+        <div class="f-icon"><i class="fa-solid fa-list-music"></i></div>
+        <h3>Playlist Support</h3>
+        <p>Build, reorder, and organize custom playlists exactly the way you want to listen.</p>
+      </div>
+      <div class="card reveal">
+        <div class="f-icon"><i class="fa-solid fa-feather"></i></div>
+        <h3>Lightweight</h3>
+        <p>A tiny footprint on storage and battery — Ghostify installs in seconds and stays out of your way.</p>
+      </div>
+      <div class="card reveal">
+        <div class="f-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+        <h3>Beautiful UI</h3>
+        <p>A dark, neon-accented interface designed for late-night listening sessions and everything in between.</p>
+      </div>
+      <div class="card reveal">
+        <div class="f-icon"><i class="fa-solid fa-shield-halved"></i></div>
+        <h3>Privacy First</h3>
+        <p>No accounts, no analytics, no permissions you don't need. Your listening habits stay yours.</p>
+      </div>
+    </div>
+
+    <div class="strip reveal">
+      <div class="strip-track">
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+        <div class="strip-tile"><i class="fa-solid fa-image"></i></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== LIVE RADIO ============================== -->
+<section id="radio">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow"><span class="dot"></span> Try Before You Install</div>
+      <h2>Hit play. Hear Ghostify's vibe right now.</h2>
+      <p>A taste of the listening experience — streaming free, independent internet radio straight from your browser.</p>
+    </div>
+
+    <div class="radio-shell reveal">
+      <div class="radio-left">
+        <div class="tag">Live Preview</div>
+        <h3>Pick a station, press play</h3>
+        <p>This isn't the app — it's a live radio player so you can feel Ghostify's sound and interface style before you ever download anything.</p>
+
+        <div class="station-list" id="stationList"><!-- populated by JS --></div>
+      </div>
+
+      <div class="player-orb-wrap">
+        <div class="player-orb">
+          <div class="ring"></div>
+          <button id="playBtn" aria-label="Play or pause radio"><i class="fa-solid fa-play" id="playIcon"></i></button>
+        </div>
+        <div class="eq-mini" id="eqMini"><i style="height:6px"></i><i style="height:14px"></i><i style="height:9px"></i><i style="height:16px"></i></div>
+        <div class="now-playing">Now tuned to<br><b id="npName">—</b></div>
+        <div class="vol-row">
+          <i class="fa-solid fa-volume-low"></i>
+          <input type="range" id="volSlider" min="0" max="100" value="70">
+          <i class="fa-solid fa-volume-high"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== DOWNLOAD ============================== -->
+<section id="download">
+  <div class="wrap">
+    <div class="download-cta reveal">
+      <h2>Ready to go ghost?</h2>
+      <p>Download the APK, install it, and load your own music library. No sign-up, no internet connection required after install.</p>
+
+      <!--
+        ================================================================
+        PUT YOUR GITHUB RELEASES APK LINK HERE (two spots):
+          1) The href below on #apkDownloadBtn
+          2) The APK_DOWNLOAD_URL constant in the <script> at the bottom
+        Example: https://github.com/your-username/ghostify/releases/latest/download/ghostify.apk
+        ================================================================
+      -->
+      <a href="#" id="apkDownloadBtn" class="btn btn-primary">
+        <i class="fa-brands fa-android"></i> Download Ghostify APK
+      </a>
+
+      <div class="dl-meta">v1.0.0 · Android 8.0+ · ~5 MB</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FAQ ============================== -->
+<section id="faq">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow"><span class="dot"></span> Questions</div>
+      <h2>Frequently asked</h2>
+    </div>
+
+    <div class="faq-list reveal">
+      <div class="faq-item">
+        <button class="faq-q">Does Ghostify need an internet connection? <i class="fa-solid fa-plus"></i></button>
+        <div class="faq-a"><p>No. Once installed, Ghostify plays music entirely from your device's local storage. The only online feature is the optional live radio preview on this website.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">Where do I get the app? <i class="fa-solid fa-plus"></i></button>
+        <div class="faq-a"><p>Ghostify is distributed as a direct APK download from GitHub Releases — no app store account required. Use the Download button above.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">Is my listening data collected anywhere? <i class="fa-solid fa-plus"></i></button>
+        <div class="faq-a"><p>No. Ghostify has no analytics, no login, and no network permissions for your music library. What you play stays on your phone.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">What Android versions are supported? <i class="fa-solid fa-plus"></i></button>
+        <div class="faq-a"><p>Ghostify supports Android 8.0 (Oreo) and above, and is built to stay lightweight on both storage and battery.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">Can I create custom playlists? <i class="fa-solid fa-plus"></i></button>
+        <div class="faq-a"><p>Yes — you can build, rename, reorder, and delete playlists freely, along with shuffle and repeat modes for any queue.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FOOTER ============================== -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a href="#top" class="logo"><span class="name">Ghostify</span></a>
+        <p>An offline-first, privacy-first Android music player. Your music, your device, your rules.</p>
+      </div>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <h4>Product</h4>
+          <a href="#features">Features</a>
+          <a href="#radio">Live Radio</a>
+          <a href="#download">Download</a>
+        </div>
+        <div class="foot-col">
+          <h4>Info</h4>
+          <a href="#faq">FAQ</a>
+          <a href="#top">Back to top</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot-bottom">
+      <div class="credit">© <span id="year"></span> Ghostify. Developed By <b>Amlan Dey</b>.</div>
+      <div class="foot-socials">
+        <a href="#" aria-label="GitHub"><i class="fa-brands fa-github"></i></a>
+        <a href="#" aria-label="Email"><i class="fa-solid fa-envelope"></i></a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ================================================================
+     PUT YOUR GITHUB RELEASES APK LINK HERE:
+     Example: "https://github.com/your-username/ghostify/releases/latest/download/ghostify.apk"
+  ================================================================ */
+  const APK_DOWNLOAD_URL = "PASTE_YOUR_GITHUB_RELEASE_APK_LINK_HERE";
+
+  document.getElementById('apkDownloadBtn').setAttribute('href', APK_DOWNLOAD_URL);
+
+  /* ---------- Nav scroll state + mobile menu ---------- */
+  const nav = document.getElementById('siteNav');
+  window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 30);
+  });
+
+  const menuToggle = document.getElementById('menuToggle');
+  const navLinks = document.getElementById('navLinks');
+  menuToggle.addEventListener('click', () => {
+    const open = navLinks.classList.toggle('open');
+    menuToggle.setAttribute('aria-expanded', open);
+    menuToggle.innerHTML = open ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
+  });
+  navLinks.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+    navLinks.classList.remove('open');
+    menuToggle.setAttribute('aria-expanded', false);
+    menuToggle.innerHTML = '<i class="fa-solid fa-bars"></i>';
+  }));
+
+  /* ---------- Scroll reveal ---------- */
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
+  }, { threshold: 0.15 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  /* ---------- Card cursor glow ---------- */
+  document.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('mousemove', (e) => {
+      const r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    });
+  });
+
+  /* ---------- Floating music notes ---------- */
+  const notesField = document.getElementById('notesField');
+  const glyphs = ['♪','♫','♬','♩'];
+  function spawnNote(){
+    const n = document.createElement('span');
+    n.className = 'note';
+    n.textContent = glyphs[Math.floor(Math.random()*glyphs.length)];
+    n.style.left = Math.random()*100 + 'vw';
+    n.style.setProperty('--drift', (Math.random()*80-40) + 'px');
+    const dur = 10 + Math.random()*10;
+    n.style.animationDuration = dur + 's';
+    n.style.fontSize = (14 + Math.random()*14) + 'px';
+    notesField.appendChild(n);
+    setTimeout(() => n.remove(), dur*1000 + 500);
+  }
+  for (let i=0;i<10;i++) setTimeout(spawnNote, i*900);
+  setInterval(spawnNote, 1500);
+
+  /* ---------- FAQ accordion ---------- */
+  document.querySelectorAll('.faq-item').forEach(item => {
+    const q = item.querySelector('.faq-q');
+    const a = item.querySelector('.faq-a');
+    q.addEventListener('click', () => {
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item.open').forEach(o => {
+        o.classList.remove('open');
+        o.querySelector('.faq-a').style.maxHeight = null;
+      });
+      if (!isOpen){
+        item.classList.add('open');
+        a.style.maxHeight = a.scrollHeight + 'px';
+      }
+    });
+  });
+
+  /* ---------- Live radio player ---------- */
+  const stations = [
+    { name:'Groove Salad', genre:'Ambient / Downtempo', url:'https://ice1.somafm.com/groovesalad-128-mp3' },
+    { name:'Beat Blender', genre:'Deep House / Chillout', url:'https://ice1.somafm.com/beatblender-128-mp3' },
+    { name:'Fluid', genre:'Trip Hop / Liquid', url:'https://ice1.somafm.com/fluid-128-mp3' },
+    { name:'Space Station', genre:'Space Music', url:'https://ice1.somafm.com/spacestation-128-mp3' }
+  ];
+
+  const audio = new Audio();
+  audio.crossOrigin = 'anonymous';
+  audio.volume = 0.7;
+
+  const stationList = document.getElementById('stationList');
+  const npName = document.getElementById('npName');
+  const playBtn = document.getElementById('playBtn');
+  const playIcon = document.getElementById('playIcon');
+  const eqMini = document.getElementById('eqMini');
+  const volSlider = document.getElementById('volSlider');
+
+  let currentIndex = 0;
+  let isPlaying = false;
+
+  function renderStations(){
+    stationList.innerHTML = '';
+    stations.forEach((s, i) => {
+      const el = document.createElement('button');
+      el.className = 'station' + (i === currentIndex ? ' active' : '');
+      el.innerHTML = `<span><span class="s-name">${s.name}</span><br><span class="s-genre">${s.genre}</span></span><i class="fa-solid fa-chevron-right"></i>`;
+      el.addEventListener('click', () => selectStation(i));
+      stationList.appendChild(el);
+    });
+  }
+
+  function selectStation(i){
+    currentIndex = i;
+    renderStations();
+    npName.textContent = stations[i].name;
+    if (isPlaying) loadAndPlay();
+  }
+
+  function loadAndPlay(){
+    audio.src = stations[currentIndex].url;
+    audio.play().catch(() => { setPlaying(false); });
+  }
+
+  function setPlaying(state){
+    isPlaying = state;
+    playIcon.className = state ? 'fa-solid fa-pause' : 'fa-solid fa-play';
+    eqMini.classList.toggle('playing', state);
+  }
+
+  playBtn.addEventListener('click', () => {
+    if (!isPlaying){
+      loadAndPlay();
+      setPlaying(true);
+    } else {
+      audio.pause();
+      setPlaying(false);
+    }
+  });
+
+  volSlider.addEventListener('input', (e) => {
+    audio.volume = e.target.value / 100;
+  });
+
+  audio.addEventListener('waiting', () => eqMini.classList.remove('playing'));
+  audio.addEventListener('playing', () => eqMini.classList.add('playing'));
+
+  renderStations();
+  npName.textContent = stations[currentIndex].name;
+
+  /* ---------- Footer year ---------- */
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+})();
+</script>
+</body>
+</html>
